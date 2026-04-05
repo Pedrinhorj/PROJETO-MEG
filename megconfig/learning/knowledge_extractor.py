@@ -38,18 +38,19 @@ Texto:
         
         output = response.get('message', {}).get('content', '').strip()
         
-        # Parse potential markdown wrapping
-        if output.startswith("```json"):
-            output = output[7:]
-        if output.startswith("```"):
-            output = output[3:]
-        if output.endswith("```"):
-            output = output[:-3]
-            
-        output = output.strip()
+        # Parse robusto de colchetes JSON pelo LLM
+        start_idx = output.find('{')
+        end_idx = output.rfind('}')
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            output = output[start_idx:end_idx+1]
         
         # Validar JSON
-        knowledge = json.loads(output)
+        try:
+            knowledge = json.loads(output)
+        except json.JSONDecodeError as e:
+            logging.error(f"Falha ao decodificar JSON do Ollama: {e}")
+            logging.debug(f"Retorno do modelo (truncado): {output[:200]}")
+            return None
         
         required_keys = {"topic", "summary", "details", "keywords"}
         if not required_keys.issubset(knowledge.keys()):
@@ -61,10 +62,6 @@ Texto:
             
         return knowledge
         
-    except json.JSONDecodeError as e:
-        logging.error(f"Falha ao decodificar JSON do Ollama: {e}")
-        logging.debug(f"Retorno do modelo: {output}")
-        return None
     except Exception as e:
-        logging.error(f"Erro durante a extração: {e}")
+        logging.error(f"Erro durante a extração geral no ollama: {e}")
         return None

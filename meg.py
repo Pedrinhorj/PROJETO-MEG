@@ -63,8 +63,20 @@ TOOLS = [
             }
         }
     },
-    # Você pode adicionar as ferramentas antigas aqui também (abrir_navegador, etc.)
-    # Exemplo:
+    {
+        "type": "function",
+        "function": {
+            "name": "consultar_memoria_aprendida",
+            "description": "Busca e consulta informações aprendidas de módulos, livros, PDFs ou DOCX em sua memória profunda. Use quando o usuário perguntar sobre coisas que você validamente leu dos resumos e módulos aprendidos.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Termo de busca, palavra-chave, tópico ou dúvida sobre o documento aprendido."}
+                },
+                "required": ["query"]
+            }
+        }
+    },
     {
         "type": "function",
         "function": {
@@ -72,8 +84,7 @@ TOOLS = [
             "description": "Abre o navegador padrão na página do Google",
             "parameters": {"type": "object", "properties": {}, "required": []}
         }
-    },
-    # ... adicione as outras se quiser
+    }
 ]
 
 # =====================================================================
@@ -151,6 +162,25 @@ def executar_ferramenta(tool_call: Any) -> str:
                 return f"Conteúdo do arquivo '{caminho.name}':\n\n{conteudo}"
             except Exception as e:
                 return f"Erro ao ler o arquivo: {str(e)}"
+
+        elif name == "consultar_memoria_aprendida":
+            query = args.get("query", "").strip()
+            if not query:
+                return "Erro ao executar: Você deve fornecer uma 'query' com a sua busca."
+            try:
+                from megconfig.retrieval.memory_search import search_memory
+                resultados = search_memory(query)
+                if not resultados:
+                    return f"Nenhuma informação encontrada na memória do aprendizado profundo sobre '{query}'."
+                
+                texto_res = f"Resultados encontrados na memória para '{query}':\n"
+                for res in resultados[:5]:
+                    modulo = res['module']
+                    k = res['knowledge']
+                    texto_res += f"- [Módulo: {modulo}] {k.get('topic')}: {k.get('summary')} (Palavras-chaves: {', '.join(k.get('keywords', []))}). Detalhes: {k.get('details')}\n"
+                return texto_res
+            except Exception as e:
+                return f"Erro ao consultar memória aprendida: {str(e)}"
 
         elif name == "abrir_navegador":
             subprocess.Popen("start https://www.google.com", shell=True)
@@ -234,18 +264,34 @@ def carregar_memoria_permanente() -> str:
 # SEÇÃO 7: LÓGICA DE INTERAÇÃO COM O MODELO OLLAMA
 # =====================================================================
 
+def carregar_regras_modelfile() -> str:
+    """Lê todas as regras mestre englobadas no Modelfile para injetar fisicamente no chat da MEG."""
+    caminho = BASE_DIR / "Modelfile"
+    padrao = "Você é a Meg, assistente inteligente."
+    if not caminho.exists():
+        return padrao
+    try:
+        conteudo = caminho.read_text(encoding="utf-8")
+        if 'SYSTEM """' in conteudo:
+            return conteudo.split('SYSTEM """')[1].split('"""')[0].strip()
+        elif 'SYSTEM "' in conteudo:
+            return conteudo.split('SYSTEM "')[1].split('"')[0].strip()
+        return padrao
+    except:
+        return padrao
+
 def montar_mensagens(pergunta: str, historico: List[Dict[str, str]]) -> List[Dict[str, str]]:
     mem_p = carregar_memoria_permanente() or "Nenhuma informação aprendida ainda."
+    personalidade_modelfile = carregar_regras_modelfile()
     
     system_prompt = (
-        "Você é a Meg, assistente pessoal inteligente do Pedro Arthur.\n"
-        "Você é um AGENTE AUTÔNOMO. Siga o estilo ReAct:\n"
+        f"{personalidade_modelfile}\n\n"
+        "------ SUAS INSTRUÇÕES DE SISTEMA EXTRAS E FERRAMENTAS ------\n"
+        "VOCÊ PODE INTERAGIR COM FERRAMENTAS PARA ACESSAR DADOS FORA DA MENTE. Lembre-se que é autônoma:\n"
         "1. Pense passo a passo.\n"
-        "2. Se precisar de informação atualizada, use a ferramenta 'pesquisar_web'.\n"
-        "3. Só responda ao usuário depois de ter todas as informações necessárias.\n"
-        "4. Sempre responda em português brasileiro, de forma clara e amigável.\n\n"
-        f"FERRAMENTAS DISPONÍVEIS:\n{FERRAMENTAS}\n\n"
-        "[MEMÓRIA PERMANENTE]:\n"
+        "2. Intercepte e use ferramentas se não souber de algo de imediato!\n\n"
+        f"FERRAMENTAS DISPONÍVEIS AGORA:\n{FERRAMENTAS}\n\n"
+        "[SUA MARCA DE MEMÓRIA PERMANENTE ATIVA CONTEXTUALIZADA]:\n"
         f"{mem_p}"
     )
     
@@ -276,8 +322,8 @@ def obter_resposta_ollama(mensagens: List[Dict[str, str]]) -> str:
         try:
             response = ollama.chat(
                 model=MODEL_NAME,
-                messages=mensagens,
-                options={"num_ctx": 16384}
+                messages=mensagens
+                # Options removidas: O tamanho do contexto agora é engolido exclusivamente pelo Modelfile leve (4096)
             )
         except Exception as e:
             return f"Erro de comunicação com Ollama: {str(e)}"

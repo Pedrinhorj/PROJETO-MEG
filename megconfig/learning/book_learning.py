@@ -25,7 +25,7 @@ def learn_from_file(file_path: str, module_name: str, module_desc: str = ""):
                 text = f.read()
         except Exception as e:
             logging.error(f"Erro ao ler arquivo tx: {e}")
-            return
+            return False
     elif file_path.lower().endswith('.pdf'):
         try:
             import PyPDF2
@@ -37,17 +37,30 @@ def learn_from_file(file_path: str, module_name: str, module_desc: str = ""):
                         text += extracted + "\n"
         except ImportError:
             logging.error("Biblioteca PyPDF2 não está instalada. Para ler PDFs, execute: pip install PyPDF2")
-            return
+            return False
         except Exception as e:
             logging.error(f"Erro ao ler pdf: {e}")
-            return
+            return False
+    elif file_path.lower().endswith('.docx'):
+        try:
+            import docx
+            doc = docx.Document(file_path)
+            for para in doc.paragraphs:
+                if para.text:
+                    text += para.text + "\n"
+        except ImportError:
+            logging.error("Biblioteca python-docx não está instalada. Para ler DOCX, execute: pip install python-docx")
+            return False
+        except Exception as e:
+            logging.error(f"Erro ao ler docx: {e}")
+            return False
     else:
-        logging.error("Formato de arquivo não suportado. Favor usar .txt ou .pdf.")
-        return
+        logging.error("Formato de arquivo não suportado. Favor usar .txt, .pdf ou .docx.")
+        return False
 
     if not text.strip():
         logging.warning("Arquivo está vazio ou texto não pôde ser extraído.")
-        return
+        return False
 
     # Garante que o módulo e as pastas existem
     create_module(module_name, module_desc)
@@ -66,3 +79,5 @@ def learn_from_file(file_path: str, module_name: str, module_desc: str = ""):
             logging.warning(f"Falha ao processar e extrair JSON válido do trecho {i+1}.")
             
     logging.info("Rotina de aprendizado a partir do arquivo finalizada!")
+    # Conta quantos chunks foram parar no json final (aprox)
+    return True

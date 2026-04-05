@@ -2,9 +2,10 @@
 # interface.py - Interface Gráfica da Meg com Modo Voz Completo
 # =====================================================================
 import tkinter as tk
-from tkinter import scrolledtext, messagebox
+from tkinter import scrolledtext, messagebox, filedialog, simpledialog
 import threading
 import time
+from pathlib import Path
 from typing import List, Dict
 
 # Importa as funções do core
@@ -54,6 +55,9 @@ class MegInterface:
         if self.voz_ativa:
             threading.Thread(target=self.falar, args=("Olá Pedro Arthur, estou pronta para ajudar!",), daemon=True).start()
 
+        # Armazena estado do arquivo
+        self.arquivo_anexado_atual = None
+
         self.root.protocol("WM_DELETE_WINDOW", self.fechar)
         self.root.mainloop()
 
@@ -96,11 +100,39 @@ class MegInterface:
             bg="#0099ff",
             fg="white",
             font=("Segoe UI", 10, "bold"),
+            width=8,
+            relief=tk.FLAT,
+            pady=8
+        )
+        send_btn.pack(side=tk.RIGHT, padx=(0, 4))
+
+        # Botão Aprender Arquivo
+        self.learn_btn = tk.Button(
+            input_frame,
+            text="📚 Aprender",
+            command=self.iniciar_aprendizado_documento,
+            bg="#9933ff",
+            fg="white",
+            font=("Segoe UI", 10, "bold"),
             width=10,
             relief=tk.FLAT,
             pady=8
         )
-        send_btn.pack(side=tk.RIGHT, padx=(0, 8))
+        self.learn_btn.pack(side=tk.RIGHT, padx=(0, 4))
+
+        # Botão Anexar Chat
+        self.attach_btn = tk.Button(
+            input_frame,
+            text="📎 Anexar",
+            command=self.anexar_arquivo_chat,
+            bg="#888888",
+            fg="white",
+            font=("Segoe UI", 10, "bold"),
+            width=8,
+            relief=tk.FLAT,
+            pady=8
+        )
+        self.attach_btn.pack(side=tk.RIGHT, padx=(0, 4))
 
         # Botão de Microfone (Voz)
         self.mic_btn = tk.Button(
@@ -159,15 +191,22 @@ class MegInterface:
 
     def enviar_mensagem(self, event=None):
         pergunta = self.user_input.get().strip()
-        if not pergunta:
+        if not pergunta and not self.arquivo_anexado_atual:
             return
 
-        self.adicionar_mensagem("Você", pergunta)
+        pergunta_display = pergunta if pergunta else "(Arquivo Anexado)"
+        self.adicionar_mensagem("Você", pergunta_display)
         self.user_input.delete(0, tk.END)
+
+        if self.arquivo_anexado_atual:
+            pergunta_envio = f"{pergunta}\n\n[Arquivo Anexado pelo Usuário com caminho: {self.arquivo_anexado_atual}]"
+            self.arquivo_anexado_atual = None
+        else:
+            pergunta_envio = pergunta
 
         threading.Thread(
             target=self.processar_pergunta,
-            args=(pergunta,),
+            args=(pergunta_envio,),
             daemon=True
         ).start()
 
@@ -250,6 +289,107 @@ class MegInterface:
             except:
                 pass
         self.root.destroy()
+
+    def anexar_arquivo_chat(self):
+        # Janela de escolha
+        pop = tk.Toplevel(self.root)
+        pop.title("Opções de Anexo")
+        pop.geometry("320x160")
+        pop.configure(bg="#2d2d2d")
+        pop.transient(self.root)
+        pop.grab_set()
+
+        lbl = tk.Label(pop, text="De onde deseja anexar um arquivo?", bg="#2d2d2d", fg="white", font=("Segoe UI", 11))
+        lbl.pack(pady=10)
+
+        def do_local():
+            pop.destroy()
+            caminho = filedialog.askopenfilename(
+                title="Anexar arquivo para a conversa atual",
+                filetypes=[("Todos os arquivos", "*.*")]
+            )
+            if caminho:
+                self.arquivo_anexado_atual = caminho
+                self.adicionar_mensagem("Sistema", f"📌 Arquivo local anexado: {caminho}", "#aaaaaa")
+
+        def do_indexado():
+            pop.destroy()
+            self._escolher_indexado()
+
+        b1 = tk.Button(pop, text="📁 Arquivo Local (Seu PC)", command=do_local, bg="#0099ff", fg="white", font=("Segoe UI", 10, "bold"), width=25, relief=tk.FLAT)
+        b1.pack(pady=5)
+        
+        b2 = tk.Button(pop, text="🧠 Módulo Indexado da Meg", command=do_indexado, bg="#9933ff", fg="white", font=("Segoe UI", 10, "bold"), width=25, relief=tk.FLAT)
+        b2.pack(pady=5)
+
+    def _escolher_indexado(self):
+        import os, json
+        from megconfig.learning.module_manager import INDEX_FILE
+        modulos = []
+        try:
+            with open(INDEX_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                modulos = [m['name'] for m in data.get('modules', [])]
+        except Exception:
+            pass
+
+        if not modulos:
+            messagebox.showinfo("Sem Módulos", "A Meg ainda não possui nenhum arquivo indexado aprendido.")
+            return
+
+        pop2 = tk.Toplevel(self.root)
+        pop2.title("Anexar Módulo Aberto")
+        pop2.geometry("380x300")
+        pop2.configure(bg="#2d2d2d")
+        pop2.transient(self.root)
+        pop2.grab_set()
+
+        tk.Label(pop2, text="Selecione um tópico ou arquivo aprendido:", bg="#2d2d2d", fg="white", font=("Segoe UI", 11)).pack(pady=5)
+
+        lista = tk.Listbox(pop2, bg="#1e1e1e", fg="white", font=("Segoe UI", 11), selectbackground="#9933ff")
+        lista.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        for m in modulos:
+            lista.insert(tk.END, m)
+
+        def confirmar():
+            sel = lista.curselection()
+            if not sel: return
+            nome_mod = lista.get(sel[0])
+            pop2.destroy()
+            BASE_DIR = os.path.dirname(INDEX_FILE)
+            know_path = os.path.join(BASE_DIR, 'modules', nome_mod, 'knowledge.json')
+            self.arquivo_anexado_atual = know_path
+            self.adicionar_mensagem("Sistema", f"📌 Arquivo indexado anexado: Módulo de Conhecimento [{nome_mod}]", "#aaaaaa")
+
+        tk.Button(pop2, text="Confirmar Anexo", command=confirmar, bg="#00cc66", fg="white", font=("Segoe UI", 10, "bold"), relief=tk.FLAT).pack(pady=10)
+
+    def iniciar_aprendizado_documento(self):
+        caminho = filedialog.askopenfilename(
+            title="Selecione um Arquivo para a Meg Aprender (PDF, Word, TXT)",
+            filetypes=[("Documentos suportados", "*.pdf *.docx *.txt"), ("Todos", "*.*")]
+        )
+        if not caminho:
+            return
+        
+        nome_modulo = simpledialog.askstring("Novo Aprendizado", "Qual será o nome/tópico deste aprendizado?")
+        if not nome_modulo:
+            nome_modulo = Path(caminho).stem
+
+        self.adicionar_mensagem("Meg", f"Iniciando aprendizado avançado do arquivo '{caminho}'...\nIsso pode demorar dependendo do tamanho. Continue conversando normalmente em paralelo!", "#cc99ff")
+        
+        def thread_learn():
+            try:
+                from megconfig.learning.book_learning import learn_from_file
+                sucesso = learn_from_file(caminho, nome_modulo, "Aprendido profundamente via UI.")
+                if sucesso:
+                    self.root.after(0, self.adicionar_mensagem, "Meg", f"✅ Estudo concluído! O módulo '{nome_modulo}' agora está gravado em minha memória profunda de conhecimentos.", "#cc99ff")
+                    self.root.after(0, self.falar, f"Concluí o estudo do arquivo. Já memorizei tudo sobre o tema {nome_modulo}.")
+                else:
+                    self.root.after(0, self.adicionar_mensagem, "Meg", f"⚠️ Arquivo em branco, ilegível ou extensão/biblioteca não suportada. Olhe o terminal de inicialização (console) para ver o que faltou.", "#ff4444")
+            except Exception as e:
+                self.root.after(0, self.adicionar_mensagem, "Meg", f"⚠️ Ocorreu um erro catastrófico no aprendizado: {str(e)}", "#ff4444")
+
+        threading.Thread(target=thread_learn, daemon=True).start()
 
 
 if __name__ == "__main__":
