@@ -1,31 +1,28 @@
-import os
-import sys
 import logging
 
-# Permite importações a partir da raiz do módulo 'meg'
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from meg.learning.book_learning import learn_from_file
-from meg.learning.module_manager import create_module
-from meg.retrieval.memory_search import search_memory
 import ollama
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+from megconfig.learning.book_learning import learn_from_file
+from megconfig.learning.module_manager import create_module
+from megconfig.retrieval.memory_search import search_memory
+from meg.config import MODEL_NAME
+
+logger = logging.getLogger(__name__)
 
 class MegBrain:
     """
     Core Controller: orquestra a inteligência, memória e busca da MEG AI,
     conectando perfeitamente o aprendizado aos motores de inferência em Llama 3 local.
     """
-    def __init__(self):
-        logging.info("MEG Brain Boot Sequence Started.")
+    def __init__(self) -> None:
+        logger.info("MEG Brain Boot Sequence Started.")
         
-    def create_memory_module(self, name: str, description: str):
+    def create_memory_module(self, name: str, description: str) -> None:
         create_module(name, description)
         
-    def learn(self, file_path: str, module_name: str, description: str = ""):
+    def learn(self, file_path: str, module_name: str, description: str = "") -> None:
         """Gatilho principal para leitura de textos ou pdfs."""
-        logging.info(f"Brain: Iniciando ingestão do arquivo: {file_path} no módulo {module_name}")
+        logger.info("Brain: Iniciando ingestão do arquivo '%s' no módulo '%s'", file_path, module_name)
         learn_from_file(file_path, module_name, description)
         
     def think_and_answer(self, question: str) -> str:
@@ -33,7 +30,7 @@ class MegBrain:
         Consulta a memória local, busca relevância semântica e contextual antes de
         elaborar e sintetizar respostas precisas via modelo de linguagem.
         """
-        logging.info(f"Brain processando query de inferência: '{question}'")
+        logger.info("Brain processando query de inferência: '%s'", question)
         
         # Estratégia simples de bag of words
         words = question.lower().split()
@@ -49,7 +46,7 @@ class MegBrain:
                         
         context_text = ""
         if relevant_knowledge:
-            logging.info(f"O modelo de recuperação retornou {len(relevant_knowledge)} blocos de contexto relevantes do JSON.")
+            logger.info("Recuperador retornou %d blocos de contexto relevantes.", len(relevant_knowledge))
             context_text = "As seguintes memórias em formato estruturado podem ajudar a formar a sua resposta de forma fiel e embasada:\n\n"
             
             # Limite rígido (Top 3) de injeção de prompt no Llama para não superar a Context Window
@@ -62,18 +59,20 @@ class MegBrain:
             
             context_text += "Instrução ao Cérebro: Priorize informações da memória fornecida.\n"
         else:
-            logging.info("Recuperador falhou ou query não abrangeu conhecimento. Atuando via general knowledge weight do Llama 3.")
+            logger.info("Nenhum contexto encontrado na memória. Usando general knowledge do modelo.")
             
         prompt = f"{context_text}\nDe modo amigável e informativo, responda:\n{question}"
         
         try:
             response = ollama.chat(
-                model="llama3",
+                model=MODEL_NAME,
                 messages=[{"role": "user", "content": prompt}]
             )
-            return response.get('message', {}).get('content', '')
+            if isinstance(response, dict):
+                return response.get("message", {}).get("content", "")
+            return getattr(getattr(response, "message", {}), "content", "")
         except Exception as e:
-            logging.error(f"Engine de Geração não respondeu. Exceção do Ollama: {e}")
+            logger.error("Engine de geração não respondeu: %s", e)
             return "Estou com problemas para pensar no momento devido a uma falha local do modelo."
 
 if __name__ == "__main__":

@@ -160,10 +160,20 @@ def ouvir(segundos: int = 6) -> str:
 
 
 # ====================== MODO CONVERSA CONTÍNUA ======================
-def modo_conversa_continua() -> None:
-    print("🎙️ Modo de voz contínuo ativado.")
-    import meg
+# NOTA: Esta função não importa mais o módulo 'meg' diretamente, evitando
+# acoplamento circular. O orquestrador (main.py) deve injetar os callbacks.
 
+def modo_conversa_continua(obter_resposta, salvar_pergunta) -> None:
+    """
+    Modo de voz contínuo — aguarda fala, envia para o agente e responde em voz.
+
+    Args:
+        obter_resposta: callable(pergunta, historico) -> str
+            Função que chama o agente e retorna a resposta como texto.
+        salvar_pergunta: callable(pergunta) -> None
+            Função que persiste a pergunta na memória permanente.
+    """
+    print("🎙️ Modo de voz contínuo ativado.")
     falar("Modo de voz ativado. Pode falar comigo, Pedro Arthur.")
 
     historico = []
@@ -178,24 +188,32 @@ def modo_conversa_continua() -> None:
             break
 
         try:
-            meg.caca_informacoes(pergunta)
-            mensagens = meg.montar_mensagens(pergunta, historico)
-            resposta = meg.obter_resposta_ollama(mensagens)
-
+            salvar_pergunta(pergunta)
+            resposta = obter_resposta(pergunta, historico)
             falar(resposta)
-
             historico.append({"role": "user", "content": pergunta})
             historico.append({"role": "assistant", "content": resposta})
-
-        except Exception as e:
-            print(f"[ERRO] {e}")
+        except Exception as erro:
+            print(f"[ERRO] {erro}")
             falar("Desculpe, ocorreu um erro.")
 
 
 # ====================== EXECUÇÃO ======================
 if __name__ == "__main__":
+    # Para rodar o modo de voz standalone, injeta os serviços da camada de aplicação
+    from meg.application.agent_service import montar_mensagens, obter_resposta_ollama
+    from meg.application.memory_service import caca_informacoes, carregar_memoria_permanente
+
+    def _obter_resposta(pergunta: str, historico: list) -> str:
+        mem = carregar_memoria_permanente()
+        mensagens = montar_mensagens(pergunta, historico, mem)
+        return obter_resposta_ollama(mensagens)
+
     try:
-        modo_conversa_continua()
+        modo_conversa_continua(
+            obter_resposta=_obter_resposta,
+            salvar_pergunta=caca_informacoes,
+        )
     except KeyboardInterrupt:
         print("\nEncerrado.")
         parar_fala()
