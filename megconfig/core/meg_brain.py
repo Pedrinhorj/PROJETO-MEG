@@ -5,9 +5,9 @@ import logging
 # Permite importações a partir da raiz do módulo 'meg'
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from meg.learning.book_learning import learn_from_file
-from meg.learning.module_manager import create_module
-from meg.retrieval.memory_search import search_memory
+from megconfig.learning.book_learning import learn_from_file
+from megconfig.learning.module_manager import create_module
+from megconfig.retrieval.memory_search import search_memory
 import ollama
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 class MegBrain:
     """
     Core Controller: orquestra a inteligência, memória e busca da MEG AI,
-    conectando perfeitamente o aprendizado aos motores de inferência em Llama 3 local.
+    conectando perfeitamente o aprendizado aos motores de inferência em Gemma 4 (2B) local.
     """
     def __init__(self):
         logging.info("MEG Brain Boot Sequence Started.")
@@ -62,14 +62,19 @@ class MegBrain:
             
             context_text += "Instrução ao Cérebro: Priorize informações da memória fornecida.\n"
         else:
-            logging.info("Recuperador falhou ou query não abrangeu conhecimento. Atuando via general knowledge weight do Llama 3.")
+            logging.info("Recuperador falhou ou query não abrangeu conhecimento. Atuando via general knowledge weight do Gemma 4 (2B).")
             
         prompt = f"{context_text}\nDe modo amigável e informativo, responda:\n{question}"
         
         try:
             response = ollama.chat(
-                model="llama3",
-                messages=[{"role": "user", "content": prompt}]
+                model="gemma4:e2b",
+                messages=[{"role": "user", "content": prompt}],
+                options={
+                    "num_predict": 512,
+                    "temperature": 0.55,
+                    "top_k": 30,
+                }
             )
             return response.get('message', {}).get('content', '')
         except Exception as e:

@@ -258,7 +258,11 @@ def caca_informacoes(pergunta: str) -> None:
 
 def carregar_memoria_permanente() -> str:
     if not MEMORIA_PERMANENTE.exists(): return ""
-    return MEMORIA_PERMANENTE.read_text(encoding="utf-8")
+    try:
+        linhas = MEMORIA_PERMANENTE.read_text(encoding="utf-8").splitlines()
+        return "\n".join(linhas[-8:])
+    except Exception:
+        return ""
 
 # =====================================================================
 # SEÇÃO 7: LÓGICA DE INTERAÇÃO COM O MODELO OLLAMA
@@ -267,7 +271,7 @@ def carregar_memoria_permanente() -> str:
 def carregar_regras_modelfile() -> str:
     """Lê todas as regras mestre englobadas no Modelfile para injetar fisicamente no chat da MEG."""
     caminho = BASE_DIR / "Modelfile"
-    padrao = "Você é a Meg, assistente inteligente."
+    padrao = "Você é a Meg."
     if not caminho.exists():
         return padrao
     try:
@@ -322,8 +326,12 @@ def obter_resposta_ollama(mensagens: List[Dict[str, str]]) -> str:
         try:
             response = ollama.chat(
                 model=MODEL_NAME,
-                messages=mensagens
-                # Options removidas: O tamanho do contexto agora é engolido exclusivamente pelo Modelfile leve (4096)
+                messages=mensagens,
+                options={
+                    "num_predict": 2048,  # Limite de tokens gerados por resposta
+                    "temperature": 0.55,
+                    "top_k": 30,
+                }
             )
         except Exception as e:
             return f"Erro de comunicação com Ollama: {str(e)}"
@@ -386,17 +394,8 @@ def obter_resposta_ollama(mensagens: List[Dict[str, str]]) -> str:
     return "🚨 Loop de análise interrompido (Muitas requisições de ferramentas). Ocorreu um erro na lógica do agente."
 
 def main() -> None:
-    try:
-        import voz  # import local para evitar ciclo de importação
-    except ImportError as e:
-        print(f"[AVISO] Módulo de voz não disponível: {e}. Continuando sem síntese de voz.")
-        voz = None
     print("Meg está online. Digite 'sair' para encerrar.\n")
     
-    # Saudação inicial por voz
-    if voz:
-        threading.Thread(target=voz.falar, args=("Meg online. Olá, Pedro Arthur!",), daemon=True).start()
-
     memoria_sessao = ""
     historico: List[Dict[str, str]] = []
     memoria_usuario = carregar_memoria_usuario()
@@ -414,10 +413,8 @@ def main() -> None:
         # Executa o loop do agente importável
         texto = obter_resposta_ollama(mensagens)
 
-        # ---> Resposta final (voz + texto)
+        # ---> Resposta final (apenas texto)
         print(f"\nMeg: {texto}\n")
-        if voz:
-            threading.Thread(target=voz.falar, args=(texto,), daemon=True).start()
 
         # Atualiza histórico e memória de sessão
         historico.append({"role": "user", "content": pergunta})

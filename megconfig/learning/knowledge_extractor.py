@@ -9,7 +9,7 @@ MAX_TEXT_LENGTH = 3000
 
 def extract_knowledge(text: str) -> dict:
     """
-    Sends text to Llama 3 via Ollama to extract structured knowledge.
+    Sends text to Gemma 4 (2B) via Ollama to extract structured knowledge.
     Returns a dictionary or None if invalid.
     """
     if len(text) > MAX_TEXT_LENGTH:
@@ -32,8 +32,13 @@ Texto:
 """
     try:
         response = ollama.chat(
-            model="llama3",
-            messages=[{"role": "user", "content": prompt}]
+            model="gemma4:e2b",
+            messages=[{"role": "user", "content": prompt}],
+            options={
+                "num_predict": 400,   # JSON de extracão não precisa de muitos tokens
+                "temperature": 0.2,   # Baixo para maior fidelidade ao formato JSON
+                "top_k": 20,
+            }
         )
         
         output = response.get('message', {}).get('content', '').strip()
